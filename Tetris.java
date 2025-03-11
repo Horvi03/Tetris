@@ -3,24 +3,32 @@ import java.awt.*;
 import java.util.Random;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.IOException;
+import javax.imageio.ImageIO;
 
 
 public class Tetris {
     public static void main(String[] args) {
         int height=1000;
-        int width=500;
+        int width=501;
 
         JFrame frame = new JFrame("Tetris");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(width,height);
         frame.setLocationRelativeTo(null);
 
-        TetrisGrid gridPanel = new TetrisGrid(width,height);
-        frame.add(gridPanel);
+        ScorePanel scorePanel=new ScorePanel();
+        TetrisGrid gridPanel = new TetrisGrid(width,height,scorePanel);
 
+        frame.setLayout(new BorderLayout());
+        frame.add(gridPanel, BorderLayout.CENTER);
+        frame.add(scorePanel, BorderLayout.EAST);
+
+        frame.pack();
         frame.setVisible(true);
         frame.setResizable(false);
-        frame.pack();
     }
 
     public  static class TetrisGrid extends JPanel{
@@ -43,7 +51,11 @@ public class Tetris {
     
         private Color[][] grid = new Color[20][10]; // 20 rows, 10 columns
 
-        public TetrisGrid(int width,int height){
+        private int score = 0;
+        private ScorePanel scorePanel;
+
+        public TetrisGrid(int width,int height,ScorePanel scorePanel){
+            this.scorePanel=scorePanel;
             setPreferredSize(new Dimension(width, height));
             setBackground(Color.BLACK);
             spawnPiece();
@@ -61,6 +73,30 @@ public class Tetris {
             @Override
             public void actionPerformed(ActionEvent e) {
                 movePieceRight();
+            }
+            });
+
+            getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("DOWN"), "moveDown");
+            getActionMap().put("moveDown", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                movePieceDown();
+            }
+            });
+
+            getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("Y"), "rotateRight");
+            getActionMap().put("rotateRight", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                rotatePieceRight();
+            }
+            });
+
+            getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("X"), "rotateLeft");
+            getActionMap().put("rotateLeft", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                rotatePieceLeft();
             }
             });
 
@@ -121,6 +157,10 @@ public class Tetris {
         protected void paintComponent(Graphics g){
             super.paintComponent(g);
 
+            /*if(backgroundImage!=null){
+            g.drawImage(backgroundImage,0,0,getWidth()-200,getHeight(),this);
+            }*/
+
             int cellSize=50;
             for(int row=0;row<20;row++){
                 for(int col=0;col<10;col++){
@@ -139,24 +179,28 @@ public class Tetris {
             }
         }
 
-        private boolean hasLanded(){
-            for(int[] block : currentPiece){
-                int blockY=pieceY+block[1];
-                int blockX=pieceX+block[0];
-                if(blockY>=19|| grid[blockY+1][blockX]!=null){
-                    for(int[]b : currentPiece){
+        private boolean hasLanded() {
+            for (int[] block : currentPiece) {
+                int blockY = pieceY + block[1];
+                int blockX = pieceX + block[0];
+                if (blockY >= 19 || (blockY >= 0 && blockY+1<20&&grid[blockY+1][blockX]!=null)) {
+                    for (int[] b : currentPiece) {
                         int gridY = pieceY + b[1];
                         int gridX = pieceX + b[0];
+                        // adding landed blocks to grid array
                         grid[gridY][gridX] = new Color(color.getRGB());
                     }
+                    checkAndRemoveFullLines(); // Check and remove full lines
                     return true;
                 }
             }
             return false;
         }
 
+
+
         private void movePieceLeft() {
-            if (canMove(pieceX - 1, pieceY)) {
+            if (canMove(pieceX - 1, pieceY,currentPiece)) {
                 pieceX--;  // Move piece to the left
             }
             repaint(); // Refresh the screen
@@ -164,28 +208,138 @@ public class Tetris {
         
         // Move piece to the right
         private void movePieceRight() {
-            if (canMove(pieceX + 1, pieceY)) {
+            if (canMove(pieceX + 1, pieceY,currentPiece)) {
                 pieceX++;  // Move piece to the right
             }
             repaint(); // Refresh the screen
         }
+
+        private void movePieceDown(){
+            if(canMove(pieceX ,pieceY+1,currentPiece)){
+                pieceY++;
+            }
+            repaint();
+        }
+
+        private void rotatePieceRight() {
+            int[][] rotatedPiece = new int[currentPiece.length][2];
+    
+            for (int i = 0; i < currentPiece.length; i++) {
+                rotatedPiece[i][0] = -currentPiece[i][1];
+                rotatedPiece[i][1] = currentPiece[i][0];
+            }
+            
+            if (canMove(pieceX, pieceY, rotatedPiece)) {
+                currentPiece = rotatedPiece;
+            }
+            repaint();
+        }
+        private void rotatePieceLeft() {
+            int[][] rotatedPiece = new int[currentPiece.length][2];
+    
+            for (int i = 0; i < currentPiece.length; i++) {
+                rotatedPiece[i][0] = currentPiece[i][1];
+                rotatedPiece[i][1] = -currentPiece[i][0];
+            }
+            
+            if (canMove(pieceX, pieceY, rotatedPiece)) {
+                currentPiece = rotatedPiece;
+            }
+            repaint();
+        }
         
-        private boolean canMove(int newX, int newY) {
-            for (int[] block : currentPiece) {
+        private boolean canMove(int newX, int newY,int[][] piece) {
+            for (int[] block : piece) {
                 int blockX = newX + block[0];
                 int blockY = newY + block[1];
         
-                // Check if the block is within bounds
                 if (blockX < 0 || blockX >= 10 || blockY >= 20) {
-                    return false; // Out of bounds
+                    return false;
                 }
         
-                // Check if the block collides with an already landed block
                 if (blockY >= 0 && grid[blockY][blockX] != null) {
-                    return false; // Collision with existing block
+                    return false; 
                 }
             }
             return true;
+        }
+
+        private void checkAndRemoveFullLines() {
+            int linesRemoved=0;
+            for (int row = 0; row < grid.length; row++) {
+                boolean isFull = true;
+                for (int col = 0; col < grid[row].length; col++) {
+                    if (grid[row][col] == null) {
+                        isFull = false;
+                        break;
+                    }
+                }
+                if (isFull) {
+                    removeLine(row);
+                    linesRemoved++;
+                }
+            }
+            if(linesRemoved>0){
+                applyBonus(linesRemoved);
+            }
+        }
+
+        private void applyBonus(int linesRemoved) {
+            int bonus = 0;
+            switch (linesRemoved) {
+                case 2:
+                    bonus = 200; // Bonus for 2 lines
+                    break;
+                case 3:
+                    bonus = 400; // Bonus for 3 lines
+                    break;
+                case 4:
+                    bonus = 600; // Bonus for 4 lines
+                    break;
+            }
+            score += bonus;
+            scorePanel.updateScore(score);
+        }
+        
+        private void removeLine(int row) {
+            Timer delayTimer = new Timer(200, new ActionListener() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    for (int r = row; r > 0; r--) {
+                        for (int col = 0; col < grid[r].length; col++) {
+                            grid[r][col] = grid[r - 1][col];
+                        }
+                    }
+                    for (int col = 0; col < grid[0].length; col++) {
+                        grid[0][col] = null;
+                    }
+                    score += 100; // Increase score by 100 for each line removed
+                    scorePanel.updateScore(score);
+                    repaint();
+                }
+            });
+            delayTimer.setRepeats(false); // Ensure the timer only runs once
+            delayTimer.start();
+        }
+    }
+
+    public static class ScorePanel extends JPanel {
+        private JLabel scoreLabel;
+        private int score;
+
+        public ScorePanel() {
+            setPreferredSize(new Dimension(300, 1000));
+            setBackground(Color.BLACK);
+            scoreLabel = new JLabel("Score:");
+            scoreLabel.setForeground(Color.WHITE);
+            scoreLabel.setFont(new Font("Comic Sans", Font.BOLD, 30));
+            add(scoreLabel);
+        }
+
+        public void updateScore(int newScore) {
+            score = newScore;
+            scoreLabel.setText("Score: " + score);
+            //scoreLabel.setText("Lines: "+ score/100);
         }
     }
 }
